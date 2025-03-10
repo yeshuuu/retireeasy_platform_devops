@@ -1,0 +1,23 @@
+stages:
+  - build
+
+build_user_service:
+  stage: build
+  image: maven:3.9.6-eclipse-temurin-17
+  script:
+    - cd user-service   
+    - mvn clean package -DskipTests
+
+build_account_service:
+  stage: build
+  image: maven:3.9.6-eclipse-temurin-17
+  script:
+    - cd account-service
+    - mvn clean package -DskipTests
+
+build_transaction_service:
+  stage: build
+  image: maven:3.9.6-eclipse-temurin-17
+  script:
+    - cd transaction-service
+    - mvn clean package -DskipTests

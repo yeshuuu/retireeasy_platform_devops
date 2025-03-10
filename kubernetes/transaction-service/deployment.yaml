@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transaction-service
+  template:
+    metadata:
+      labels:
+        app: transaction-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: transaction-service
+          image: 726725835313.dkr.ecr.us-east-1.amazonaws.com/transaction-service:1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8083
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://<POSTGRES-HOST>:5433/retireeasy
+            - name: SPRING_DATASOURCE_USERNAME
+              value: postgres
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: postgres
+            - name: ACCOUNT_SERVICE_URL
+              value: http://account-service:8082
