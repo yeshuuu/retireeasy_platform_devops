@@ -22,8 +22,17 @@ spec:
             - containerPort: 8081
           env:
             - name: SPRING_DATASOURCE_URL
-              value: jdbc:postgresql://<POSTGRES-HOST>:5433/retireeasy
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: datasource-url
             - name: SPRING_DATASOURCE_USERNAME
-              value: postgres
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: datasource-username
             - name: SPRING_DATASOURCE_PASSWORD
-              value: postgres
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: datasource-password

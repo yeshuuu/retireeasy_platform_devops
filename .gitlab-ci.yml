@@ -1,23 +1,122 @@
 stages:
   - build
+  - docker
+  - update-manifests
+
+# ──────────────────────────────────────────────
+# Global variables
+# ──────────────────────────────────────────────
+variables:
+  AWS_ACCOUNT_ID: "726725835313"
+  AWS_REGION: "us-east-1"
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+
+# ──────────────────────────────────────────────
+# Stage 1: Build — compile & package each service
+# ──────────────────────────────────────────────
+.build_template: &build_template
+  stage: build
+  image: maven:3.9.6-eclipse-temurin-17
+  script:
+    - cd ${SERVICE_DIR}
+    - mvn clean package -DskipTests
+  artifacts:
+    paths:
+      - ${SERVICE_DIR}/target/*.jar
+    expire_in: 1 hour
 
 build_user_service:
-  stage: build
-  image: maven:3.9.6-eclipse-temurin-17
-  script:
-    - cd user-service   
-    - mvn clean package -DskipTests
+  <<: *build_template
+  variables:
+    SERVICE_DIR: user-service
 
 build_account_service:
-  stage: build
-  image: maven:3.9.6-eclipse-temurin-17
-  script:
-    - cd account-service
-    - mvn clean package -DskipTests
+  <<: *build_template
+  variables:
+    SERVICE_DIR: account-service
 
 build_transaction_service:
-  stage: build
-  image: maven:3.9.6-eclipse-temurin-17
+  <<: *build_template
+  variables:
+    SERVICE_DIR: transaction-service
+
+# ──────────────────────────────────────────────
+# Stage 2: Docker — build image & push to ECR
+# Requires GitLab CI/CD variables:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# ──────────────────────────────────────────────
+.docker_template: &docker_template
+  stage: docker
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - apk add --no-cache aws-cli
+    - aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
   script:
-    - cd transaction-service
-    - mvn clean package -DskipTests
+    - docker build -t ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG} ./${SERVICE_DIR}
+    - docker push ${ECR_REGISTRY}/${SERVICE_NAME}:${IMAGE_TAG}
+
+docker_user_service:
+  <<: *docker_template
+  needs: [build_user_service]
+  variables:
+    SERVICE_DIR: user-service
+    SERVICE_NAME: user-service
+
+docker_account_service:
+  <<: *docker_template
+  needs: [build_account_service]
+  variables:
+    SERVICE_DIR: account-service
+    SERVICE_NAME: account-service
+
+docker_transaction_service:
+  <<: *docker_template
+  needs: [build_transaction_service]
+  variables:
+    SERVICE_DIR: transaction-service
+    SERVICE_NAME: transaction-service
+
+# ──────────────────────────────────────────────
+# Stage 3: Update Manifests — write new image tags
+# into kubernetes/ and commit back to repo so
+# Argo CD can detect the change and roll out.
+# Requires GitLab CI/CD variable: GITLAB_TOKEN
+# Only runs on the main branch.
+# ──────────────────────────────────────────────
+update_manifests:
+  stage: update-manifests
+  image: alpine/git
+  needs:
+    - docker_user_service
+    - docker_account_service
+    - docker_transaction_service
+  only:
+    - main
+  script:
+    - git config --global user.email "ci@gitlab.com"
+    - git config --global user.name "GitLab CI"
+    - git remote set-url origin https://oauth2:${GITLAB_TOKEN}@gitlab.com/${CI_PROJECT_PATH}.git
+    - git fetch origin
+    - git checkout ${CI_COMMIT_BRANCH}
+
+    # Replace image tags with the current git SHA
+    - |
+      sed -i \
+        "s|image: ${ECR_REGISTRY}/user-service:.*|image: ${ECR_REGISTRY}/user-service:${IMAGE_TAG}|" \
+        kubernetes/user-service/deployment.yaml
+    - |
+      sed -i \
+        "s|image: ${ECR_REGISTRY}/account-service:.*|image: ${ECR_REGISTRY}/account-service:${IMAGE_TAG}|" \
+        kubernetes/account-service/deployment.yaml
+    - |
+      sed -i \
+        "s|image: ${ECR_REGISTRY}/transaction-service:.*|image: ${ECR_REGISTRY}/transaction-service:${IMAGE_TAG}|" \
+        kubernetes/transaction-service/deployment.yaml
+
+    # Commit only if something changed; [skip ci] prevents a recursive pipeline
+    - git add kubernetes/
+    - git diff --cached --quiet || git commit -m "ci: update image tags to ${IMAGE_TAG} [skip ci]"
+    - git push origin ${CI_COMMIT_BRANCH}

@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: account-service-dev
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: retireeasy
+  source:
+    repoURL: https://gitlab.com/YOUR_GITLAB_GROUP/retireeasy-platform.git  # TODO: replace with your actual GitLab repo URL
+    targetRevision: HEAD
+    path: kubernetes/account-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: retireeasy-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: retireeasy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: RetireEasy applications for the dev environment
+  sourceRepos:
+    - https://gitlab.com/YOUR_GITLAB_GROUP/retireeasy-platform.git  # TODO: replace with your actual GitLab repo URL
+  destinations:
+    - namespace: retireeasy-dev
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: Service
+    - group: apps
+      kind: Deployment
+  orphanedResources:
+    warn: true
